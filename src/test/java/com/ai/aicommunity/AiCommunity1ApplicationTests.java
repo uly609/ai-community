@@ -1,4 +1,4 @@
-package com.ai.aicommunity1;
+package com.ai.aicommunity;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;

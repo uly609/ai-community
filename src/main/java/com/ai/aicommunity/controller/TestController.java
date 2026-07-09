@@ -1,4 +1,4 @@
-package com.ai.aicommunity1.controller;
+package com.ai.aicommunity.controller;
 
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
