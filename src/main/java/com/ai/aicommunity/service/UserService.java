@@ -27,6 +27,15 @@ public class UserService {
         return userMapper.selectList(null);
     }
 
+    public User getById(Long id) {
+        User user = userMapper.selectById(id);
+        if (user == null) {
+            throw new BusinessException("用户不存在");
+        }
+        user.setPassword(null);
+        return user;
+    }
+
     public void register(RegisterDTO dto) {
         User existUser = userMapper.selectOne(
                 new LambdaQueryWrapper<User>()
