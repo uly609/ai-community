@@ -1,6 +1,7 @@
 package com.ai.aicommunity.controller;
 
 import com.ai.aicommunity.common.Result;
+import com.ai.aicommunity.dto.LoginDTO;
 import com.ai.aicommunity.dto.RegisterDTO;
 import com.ai.aicommunity.entity.User;
 import com.ai.aicommunity.service.UserService;
@@ -27,5 +28,10 @@ public class UserController {
     public Result<String> register(@RequestBody RegisterDTO dto) {
         userService.register(dto);
         return Result.success("注册成功");
+    }
+
+    @PostMapping("/login")
+    public Result<String> login(@RequestBody LoginDTO dto) {
+        return Result.success(userService.login(dto));
     }
 }
