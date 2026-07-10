@@ -3,9 +3,8 @@ package com.ai.aicommunity.controller;
 import com.ai.aicommunity.dto.ArticleDTO;
 import com.ai.aicommunity.entity.Article;
 import com.ai.aicommunity.service.ArticleService;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
 
 @RestController
 @RequestMapping("/articles")
@@ -24,8 +23,10 @@ public class ArticleController {
     }
 
     @GetMapping
-    public List<Article> list() {
-        return articleService.list();
+    public Page<Article> list(
+            @RequestParam(defaultValue = "1") Integer current,
+            @RequestParam(defaultValue = "10") Integer size) {
+        return articleService.page(current, size);
     }
 
     @GetMapping("/{id}")
