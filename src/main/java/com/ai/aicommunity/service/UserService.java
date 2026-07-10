@@ -1,9 +1,11 @@
 package com.ai.aicommunity.service;
 
+import com.ai.aicommunity.dto.LoginDTO;
 import com.ai.aicommunity.dto.RegisterDTO;
 import com.ai.aicommunity.entity.User;
 import com.ai.aicommunity.exception.BusinessException;
 import com.ai.aicommunity.mapper.UserMapper;
+import com.ai.aicommunity.utils.JwtUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -26,7 +28,6 @@ public class UserService {
     }
 
     public void register(RegisterDTO dto) {
-
         User existUser = userMapper.selectOne(
                 new LambdaQueryWrapper<User>()
                         .eq(User::getUsername, dto.getUsername())
@@ -39,7 +40,19 @@ public class UserService {
         User user = new User();
         user.setUsername(dto.getUsername());
         user.setPassword(passwordEncoder.encode(dto.getPassword()));
-
         userMapper.insert(user);
+    }
+
+    public String login(LoginDTO dto) {
+        User user = userMapper.selectOne(
+                new LambdaQueryWrapper<User>()
+                        .eq(User::getUsername, dto.getUsername())
+        );
+
+        if (user == null || !passwordEncoder.matches(dto.getPassword(), user.getPassword())) {
+            throw new BusinessException("用户名或密码错误");
+        }
+
+        return JwtUtil.createToken(user.getId());
     }
 }
