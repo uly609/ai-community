@@ -4,6 +4,7 @@ import com.ai.aicommunity.dto.RegisterDTO;
 import com.ai.aicommunity.entity.User;
 import com.ai.aicommunity.exception.BusinessException;
 import com.ai.aicommunity.mapper.UserMapper;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -14,7 +15,6 @@ import java.util.List;
 public class UserService {
 
     private final UserMapper userMapper;
-
     private final PasswordEncoder passwordEncoder;
 
     public UserService(UserMapper userMapper, PasswordEncoder passwordEncoder) {
@@ -27,6 +27,15 @@ public class UserService {
     }
 
     public void register(RegisterDTO dto) {
+
+        User existUser = userMapper.selectOne(
+                new LambdaQueryWrapper<User>()
+                        .eq(User::getUsername, dto.getUsername())
+        );
+
+        if (existUser != null) {
+            throw new BusinessException("用户名已存在");
+        }
 
         User user = new User();
         user.setUsername(dto.getUsername());
