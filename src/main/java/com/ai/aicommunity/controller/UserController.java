@@ -5,6 +5,7 @@ import com.ai.aicommunity.dto.LoginDTO;
 import com.ai.aicommunity.dto.RegisterDTO;
 import com.ai.aicommunity.entity.User;
 import com.ai.aicommunity.service.UserService;
+import com.ai.aicommunity.utils.UserHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -22,6 +23,11 @@ public class UserController {
     @GetMapping
     public Result<List<User>> list() {
         return Result.success(userService.list());
+    }
+
+    @GetMapping("/me")
+    public Result<User> me() {
+        return Result.success(userService.getById(UserHolder.getUserId()));
     }
 
     @PostMapping("/register")
