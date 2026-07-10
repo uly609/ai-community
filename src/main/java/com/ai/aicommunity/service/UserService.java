@@ -5,6 +5,7 @@ import com.ai.aicommunity.entity.User;
 import com.ai.aicommunity.exception.BusinessException;
 import com.ai.aicommunity.mapper.UserMapper;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
