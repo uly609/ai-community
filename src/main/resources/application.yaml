@@ -1,5 +1,10 @@
 spring:
   application:
-    name: ai-community1
+    name: ai-community
+  datasource:
+    url: jdbc:mysql://localhost:3306/ai_community
+    username: root
+    password: Whm314157
+    driver-class-name: com.mysql.cj.jdbc.Driver
 server:
   port: 8081
