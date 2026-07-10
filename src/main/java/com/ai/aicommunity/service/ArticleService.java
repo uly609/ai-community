@@ -12,7 +12,6 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.util.List;
 
 @Service
 public class ArticleService {
@@ -47,8 +46,16 @@ public class ArticleService {
 
     public Article detail(Long id) {
         String key = "article:detail:" + id;
+
         String cache = redisTemplate.opsForValue().get(key);
+
+        // Redis中存在缓存
         if (cache != null) {
+            // 缓存空值，直接返回，避免缓存穿透
+            if ("null".equals(cache)) {
+                return null;
+            }
+
             try {
                 return objectMapper.readValue(cache, Article.class);
             } catch (JsonProcessingException ignored) {
@@ -56,14 +63,26 @@ public class ArticleService {
         }
 
         Article article = articleMapper.selectById(id);
-        if (article != null) {
-            try {
-                redisTemplate.opsForValue().set(key,
-                        objectMapper.writeValueAsString(article),
-                        Duration.ofMinutes(30));
-            } catch (JsonProcessingException ignored) {
-            }
+
+        // 数据库不存在，缓存空值
+        if (article == null) {
+            redisTemplate.opsForValue().set(
+                    key,
+                    "null",
+                    Duration.ofMinutes(5)
+            );
+            return null;
         }
+
+        try {
+            redisTemplate.opsForValue().set(
+                    key,
+                    objectMapper.writeValueAsString(article),
+                    Duration.ofMinutes(30)
+            );
+        } catch (JsonProcessingException ignored) {
+        }
+
         return article;
     }
 }
