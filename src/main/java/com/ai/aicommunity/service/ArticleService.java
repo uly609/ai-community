@@ -3,6 +3,7 @@ package com.ai.aicommunity.service;
 import com.ai.aicommunity.dto.ArticleDTO;
 import com.ai.aicommunity.entity.Article;
 import com.ai.aicommunity.mapper.ArticleMapper;
+import com.ai.aicommunity.utils.BloomFilterUtil;
 import com.ai.aicommunity.utils.UserHolder;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -45,6 +46,7 @@ public class ArticleService {
         article.setCreateTime(LocalDateTime.now());
         article.setUpdateTime(LocalDateTime.now());
         articleMapper.insert(article);
+        BloomFilterUtil.addArticleId(article.getId());
     }
 
     public Page<Article> page(Integer current, Integer size) {
@@ -52,6 +54,10 @@ public class ArticleService {
     }
 
     public Article detail(Long id) {
+        if (!BloomFilterUtil.mightExist(id)) {
+            return null;
+        }
+
         String key = "article:detail:" + id;
 
         Object localArticle = articleLocalCache.getIfPresent(key);
@@ -94,7 +100,6 @@ public class ArticleService {
             }
 
             try {
-                // 随机TTL，避免大量缓存同时过期导致缓存雪崩
                 long expireMinutes = 30 + ThreadLocalRandom.current().nextLong(10);
                 redisTemplate.opsForValue().set(
                         key,
