@@ -4,8 +4,13 @@ import com.ai.aicommunity.dto.ArticleDTO;
 import com.ai.aicommunity.entity.Article;
 import com.ai.aicommunity.mapper.ArticleMapper;
 import com.ai.aicommunity.utils.UserHolder;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -13,9 +18,15 @@ import java.util.List;
 public class ArticleService {
 
     private final ArticleMapper articleMapper;
+    private final StringRedisTemplate redisTemplate;
+    private final ObjectMapper objectMapper;
 
-    public ArticleService(ArticleMapper articleMapper) {
+    public ArticleService(ArticleMapper articleMapper,
+                           StringRedisTemplate redisTemplate,
+                           ObjectMapper objectMapper) {
         this.articleMapper = articleMapper;
+        this.redisTemplate = redisTemplate;
+        this.objectMapper = objectMapper;
     }
 
     public void create(ArticleDTO dto) {
@@ -30,11 +41,29 @@ public class ArticleService {
         articleMapper.insert(article);
     }
 
-    public List<Article> list() {
-        return articleMapper.selectList(null);
+    public Page<Article> page(Integer current, Integer size) {
+        return articleMapper.selectPage(new Page<>(current, size), null);
     }
 
     public Article detail(Long id) {
-        return articleMapper.selectById(id);
+        String key = "article:detail:" + id;
+        String cache = redisTemplate.opsForValue().get(key);
+        if (cache != null) {
+            try {
+                return objectMapper.readValue(cache, Article.class);
+            } catch (JsonProcessingException ignored) {
+            }
+        }
+
+        Article article = articleMapper.selectById(id);
+        if (article != null) {
+            try {
+                redisTemplate.opsForValue().set(key,
+                        objectMapper.writeValueAsString(article),
+                        Duration.ofMinutes(30));
+            } catch (JsonProcessingException ignored) {
+            }
+        }
+        return article;
     }
 }
