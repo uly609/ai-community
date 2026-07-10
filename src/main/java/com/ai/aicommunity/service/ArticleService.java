@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
 @Service
@@ -23,8 +24,6 @@ public class ArticleService {
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
     private final Cache<String, Object> articleLocalCache;
-
-    private final Object cacheLock = new Object();
 
     public ArticleService(ArticleMapper articleMapper,
                           StringRedisTemplate redisTemplate,
@@ -59,7 +58,6 @@ public class ArticleService {
         }
 
         String key = "article:detail:" + id;
-
         Object localArticle = articleLocalCache.getIfPresent(key);
         if (localArticle != null) {
             return (Article) localArticle;
@@ -78,28 +76,26 @@ public class ArticleService {
             }
         }
 
-        synchronized (cacheLock) {
-            cache = redisTemplate.opsForValue().get(key);
-            if (cache != null) {
-                if ("null".equals(cache)) {
-                    return null;
-                }
-                try {
+        String lockKey = "lock:article:" + id;
+        String lockValue = UUID.randomUUID().toString();
+        Boolean locked = redisTemplate.opsForValue()
+                .setIfAbsent(lockKey, lockValue, Duration.ofSeconds(10));
+
+        try {
+            if (Boolean.TRUE.equals(locked)) {
+                cache = redisTemplate.opsForValue().get(key);
+                if (cache != null && !"null".equals(cache)) {
                     Article article = objectMapper.readValue(cache, Article.class);
                     articleLocalCache.put(key, article);
                     return article;
-                } catch (JsonProcessingException ignored) {
                 }
-            }
 
-            Article article = articleMapper.selectById(id);
+                Article article = articleMapper.selectById(id);
+                if (article == null) {
+                    redisTemplate.opsForValue().set(key, "null", Duration.ofMinutes(5));
+                    return null;
+                }
 
-            if (article == null) {
-                redisTemplate.opsForValue().set(key, "null", Duration.ofMinutes(5));
-                return null;
-            }
-
-            try {
                 long expireMinutes = 30 + ThreadLocalRandom.current().nextLong(10);
                 redisTemplate.opsForValue().set(
                         key,
@@ -107,10 +103,17 @@ public class ArticleService {
                         Duration.ofMinutes(expireMinutes)
                 );
                 articleLocalCache.put(key, article);
-            } catch (JsonProcessingException ignored) {
+                return article;
             }
 
-            return article;
+            return articleLocalCache.getIfPresent(key) == null ? null :
+                    (Article) articleLocalCache.getIfPresent(key);
+        } catch (JsonProcessingException ignored) {
+            return null;
+        } finally {
+            if (Boolean.TRUE.equals(locked)) {
+                redisTemplate.delete(lockKey);
+            }
         }
     }
 }
