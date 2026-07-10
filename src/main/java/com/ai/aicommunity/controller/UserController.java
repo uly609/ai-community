@@ -1,5 +1,6 @@
 package com.ai.aicommunity.controller;
 
+import com.ai.aicommunity.common.Result;
 import com.ai.aicommunity.entity.User;
 import com.ai.aicommunity.service.UserService;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,7 +20,7 @@ public class UserController {
     }
 
     @GetMapping
-    public List<User> list() {
-        return userService.list();
+    public Result<List<User>> list() {
+        return Result.success(userService.list());
     }
 }
