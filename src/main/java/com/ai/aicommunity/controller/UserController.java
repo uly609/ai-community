@@ -1,11 +1,10 @@
 package com.ai.aicommunity.controller;
 
 import com.ai.aicommunity.common.Result;
+import com.ai.aicommunity.dto.RegisterDTO;
 import com.ai.aicommunity.entity.User;
 import com.ai.aicommunity.service.UserService;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
@@ -22,5 +21,11 @@ public class UserController {
     @GetMapping
     public Result<List<User>> list() {
         return Result.success(userService.list());
+    }
+
+    @PostMapping("/register")
+    public Result<String> register(@RequestBody RegisterDTO dto) {
+        userService.register(dto);
+        return Result.success("注册成功");
     }
 }
