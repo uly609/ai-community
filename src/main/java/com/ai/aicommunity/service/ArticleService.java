@@ -20,6 +20,8 @@ public class ArticleService {
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
 
+    private final Object cacheLock = new Object();
+
     public ArticleService(ArticleMapper articleMapper,
                            StringRedisTemplate redisTemplate,
                            ObjectMapper objectMapper) {
@@ -48,41 +50,50 @@ public class ArticleService {
         String key = "article:detail:" + id;
 
         String cache = redisTemplate.opsForValue().get(key);
-
-        // Redis中存在缓存
         if (cache != null) {
-            // 缓存空值，直接返回，避免缓存穿透
             if ("null".equals(cache)) {
                 return null;
             }
-
             try {
                 return objectMapper.readValue(cache, Article.class);
             } catch (JsonProcessingException ignored) {
             }
         }
 
-        Article article = articleMapper.selectById(id);
+        synchronized (cacheLock) {
+            // 防止多个线程同时查询数据库，先再次检查缓存
+            cache = redisTemplate.opsForValue().get(key);
+            if (cache != null) {
+                if ("null".equals(cache)) {
+                    return null;
+                }
+                try {
+                    return objectMapper.readValue(cache, Article.class);
+                } catch (JsonProcessingException ignored) {
+                }
+            }
 
-        // 数据库不存在，缓存空值
-        if (article == null) {
-            redisTemplate.opsForValue().set(
-                    key,
-                    "null",
-                    Duration.ofMinutes(5)
-            );
-            return null;
+            Article article = articleMapper.selectById(id);
+
+            if (article == null) {
+                redisTemplate.opsForValue().set(
+                        key,
+                        "null",
+                        Duration.ofMinutes(5)
+                );
+                return null;
+            }
+
+            try {
+                redisTemplate.opsForValue().set(
+                        key,
+                        objectMapper.writeValueAsString(article),
+                        Duration.ofMinutes(30)
+                );
+            } catch (JsonProcessingException ignored) {
+            }
+
+            return article;
         }
-
-        try {
-            redisTemplate.opsForValue().set(
-                    key,
-                    objectMapper.writeValueAsString(article),
-                    Duration.ofMinutes(30)
-            );
-        } catch (JsonProcessingException ignored) {
-        }
-
-        return article;
     }
 }
