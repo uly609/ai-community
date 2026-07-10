@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.concurrent.ThreadLocalRandom;
 
 @Service
 public class ArticleService {
@@ -53,13 +54,11 @@ public class ArticleService {
     public Article detail(Long id) {
         String key = "article:detail:" + id;
 
-        // 第一层：查询Caffeine本地缓存
         Object localArticle = articleLocalCache.getIfPresent(key);
         if (localArticle != null) {
             return (Article) localArticle;
         }
 
-        // 第二层：查询Redis
         String cache = redisTemplate.opsForValue().get(key);
         if (cache != null) {
             if ("null".equals(cache)) {
@@ -90,19 +89,17 @@ public class ArticleService {
             Article article = articleMapper.selectById(id);
 
             if (article == null) {
-                redisTemplate.opsForValue().set(
-                        key,
-                        "null",
-                        Duration.ofMinutes(5)
-                );
+                redisTemplate.opsForValue().set(key, "null", Duration.ofMinutes(5));
                 return null;
             }
 
             try {
+                // 随机TTL，避免大量缓存同时过期导致缓存雪崩
+                long expireMinutes = 30 + ThreadLocalRandom.current().nextLong(10);
                 redisTemplate.opsForValue().set(
                         key,
                         objectMapper.writeValueAsString(article),
-                        Duration.ofMinutes(30)
+                        Duration.ofMinutes(expireMinutes)
                 );
                 articleLocalCache.put(key, article);
             } catch (JsonProcessingException ignored) {
