@@ -7,6 +7,7 @@ import com.ai.aicommunity.utils.UserHolder;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.benmanes.caffeine.cache.Cache;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -19,15 +20,18 @@ public class ArticleService {
     private final ArticleMapper articleMapper;
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
+    private final Cache<String, Object> articleLocalCache;
 
     private final Object cacheLock = new Object();
 
     public ArticleService(ArticleMapper articleMapper,
-                           StringRedisTemplate redisTemplate,
-                           ObjectMapper objectMapper) {
+                          StringRedisTemplate redisTemplate,
+                          ObjectMapper objectMapper,
+                          Cache<String, Object> articleLocalCache) {
         this.articleMapper = articleMapper;
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
+        this.articleLocalCache = articleLocalCache;
     }
 
     public void create(ArticleDTO dto) {
@@ -49,26 +53,36 @@ public class ArticleService {
     public Article detail(Long id) {
         String key = "article:detail:" + id;
 
+        // 第一层：查询Caffeine本地缓存
+        Object localArticle = articleLocalCache.getIfPresent(key);
+        if (localArticle != null) {
+            return (Article) localArticle;
+        }
+
+        // 第二层：查询Redis
         String cache = redisTemplate.opsForValue().get(key);
         if (cache != null) {
             if ("null".equals(cache)) {
                 return null;
             }
             try {
-                return objectMapper.readValue(cache, Article.class);
+                Article article = objectMapper.readValue(cache, Article.class);
+                articleLocalCache.put(key, article);
+                return article;
             } catch (JsonProcessingException ignored) {
             }
         }
 
         synchronized (cacheLock) {
-            // 防止多个线程同时查询数据库，先再次检查缓存
             cache = redisTemplate.opsForValue().get(key);
             if (cache != null) {
                 if ("null".equals(cache)) {
                     return null;
                 }
                 try {
-                    return objectMapper.readValue(cache, Article.class);
+                    Article article = objectMapper.readValue(cache, Article.class);
+                    articleLocalCache.put(key, article);
+                    return article;
                 } catch (JsonProcessingException ignored) {
                 }
             }
@@ -90,6 +104,7 @@ public class ArticleService {
                         objectMapper.writeValueAsString(article),
                         Duration.ofMinutes(30)
                 );
+                articleLocalCache.put(key, article);
             } catch (JsonProcessingException ignored) {
             }
 
