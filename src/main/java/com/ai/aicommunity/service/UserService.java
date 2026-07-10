@@ -4,6 +4,7 @@ import com.ai.aicommunity.dto.RegisterDTO;
 import com.ai.aicommunity.entity.User;
 import com.ai.aicommunity.exception.BusinessException;
 import com.ai.aicommunity.mapper.UserMapper;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -13,8 +14,11 @@ public class UserService {
 
     private final UserMapper userMapper;
 
-    public UserService(UserMapper userMapper) {
+    private final PasswordEncoder passwordEncoder;
+
+    public UserService(UserMapper userMapper, PasswordEncoder passwordEncoder) {
         this.userMapper = userMapper;
+        this.passwordEncoder = passwordEncoder;
     }
 
     public List<User> list() {
@@ -25,7 +29,7 @@ public class UserService {
 
         User user = new User();
         user.setUsername(dto.getUsername());
-        user.setPassword(dto.getPassword());
+        user.setPassword(passwordEncoder.encode(dto.getPassword()));
 
         userMapper.insert(user);
     }
