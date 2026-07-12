@@ -2,8 +2,6 @@ package com.ai.aicommunity.common;
 
 import lombok.Data;
 
-import lombok.Data;
-
 @Data
 public class Result<T> {
 
@@ -16,7 +14,7 @@ public class Result<T> {
 
     public static <T> Result<T> success(T data){
         Result<T> result = new Result<>();
-        result.code = ResultCode.SUCCESS;;
+        result.code = ResultCode.SUCCESS;
         result.message = "success";
         result.data = data;
         return result;

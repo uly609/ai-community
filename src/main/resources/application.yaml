@@ -4,7 +4,15 @@ spring:
   datasource:
     url: jdbc:mysql://localhost:3306/ai_community
     username: root
-    password: Whm314157
+    password: Whm1314157
     driver-class-name: com.mysql.cj.jdbc.Driver
+rocketmq:
+  name-server: localhost:9876
+  producer:
+    group: training-camp-producer-group
 server:
-  port: 8081
+  port: 8080
+app:
+  mq:
+    training-camp:
+      enabled: true
