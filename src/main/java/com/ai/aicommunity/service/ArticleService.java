@@ -1,7 +1,11 @@
 package com.ai.aicommunity.service;
 
 import com.ai.aicommunity.dto.ArticleDTO;
+import com.ai.aicommunity.dto.ArticleAiSummaryMessage;
+import com.ai.aicommunity.config.AiProperties;
+import com.ai.aicommunity.config.RocketMQConfig;
 import com.ai.aicommunity.entity.Article;
+import com.ai.aicommunity.entity.MqOutboxMessage;
 import com.ai.aicommunity.exception.BusinessException;
 import com.ai.aicommunity.mapper.ArticleMapper;
 import com.ai.aicommunity.utils.BloomFilterUtil;
@@ -15,6 +19,9 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -41,19 +48,26 @@ public class ArticleService {
     private final ObjectMapper objectMapper;
     private final Cache<String, Object> articleLocalCache;
     private final Executor cacheRebuildExecutor;
+    private final MqOutboxService mqOutboxService;
+    private final AiProperties aiProperties;
 
     public ArticleService(ArticleMapper articleMapper,
                           StringRedisTemplate redisTemplate,
                           ObjectMapper objectMapper,
                           Cache<String, Object> articleLocalCache,
-                          @Qualifier("cacheRebuildExecutor") Executor cacheRebuildExecutor) {
+                          @Qualifier("cacheRebuildExecutor") Executor cacheRebuildExecutor,
+                          MqOutboxService mqOutboxService,
+                          AiProperties aiProperties) {
         this.articleMapper = articleMapper;
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
         this.articleLocalCache = articleLocalCache;
         this.cacheRebuildExecutor = cacheRebuildExecutor;
+        this.mqOutboxService = mqOutboxService;
+        this.aiProperties = aiProperties;
     }
 
+    @Transactional(rollbackFor = Exception.class)
     public void create(ArticleDTO dto) {
         Article article = new Article();
         article.setUserId(UserHolder.getUserId());
@@ -61,12 +75,17 @@ public class ArticleService {
         article.setContent(dto.getContent());
         article.setViewCount(0);
         article.setLikeCount(0);
+        article.setCommentCount(0);
         article.setCreateTime(LocalDateTime.now());
         article.setUpdateTime(LocalDateTime.now());
         articleMapper.insert(article);
 
         BloomFilterUtil.addArticleId(article.getId());
         rebuildCache(article.getId(), buildDetailKey(article.getId()));
+
+        if (aiProperties.isEnabled()) {
+            enqueueAiSummaryAfterCommit(article);
+        }
     }
 
     public Page<Article> page(Integer current, Integer size) {
@@ -192,6 +211,31 @@ public class ArticleService {
         String key = buildDetailKey(id);
         articleLocalCache.invalidate(key);
         redisTemplate.delete(key);
+    }
+
+    /**
+     * 文章互动数据改变后，由互动服务调用，避免详情页继续返回旧的点赞数。
+     */
+    public void invalidateDetailCache(Long id) {
+        invalidateCache(id);
+    }
+
+    private void enqueueAiSummaryAfterCommit(Article article) {
+        ArticleAiSummaryMessage payload = new ArticleAiSummaryMessage(
+                article.getId(), article.getTitle(), article.getContent());
+        try {
+            MqOutboxMessage outboxMessage = mqOutboxService.savePending(
+                    RocketMQConfig.ARTICLE_AI_SUMMARY_TOPIC,
+                    objectMapper.writeValueAsString(payload));
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    mqOutboxService.sendNow(outboxMessage, payload);
+                }
+            });
+        } catch (Exception e) {
+            throw new BusinessException("创建AI摘要任务失败");
+        }
     }
 
     private void releaseLock(String lockKey, String lockValue) {

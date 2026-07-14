@@ -13,15 +13,22 @@ public class LoginUserInterceptor implements HandlerInterceptor {
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws IOException {
         String token = request.getHeader("Authorization");
 
-        if (token == null || token.isEmpty()) {
+        if (token == null || token.isEmpty() || !token.startsWith("Bearer ")) {
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             response.setContentType("application/json;charset=UTF-8");
             response.getWriter().write("{\"code\":401,\"message\":\"请先登录\"}");
             return false;
         }
 
-        Long userId = JwtUtil.getUserId(token.replace("Bearer ", ""));
-        UserHolder.saveUserId(userId);
+        try {
+            Long userId = JwtUtil.getUserId(token.replace("Bearer ", ""));
+            UserHolder.saveUserId(userId);
+        } catch (Exception e) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            response.setContentType("application/json;charset=UTF-8");
+            response.getWriter().write("{\"code\":401,\"message\":\"登录已过期或token无效\"}");
+            return false;
+        }
 
         return true;
     }

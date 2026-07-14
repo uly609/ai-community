@@ -10,7 +10,10 @@ import org.springframework.stereotype.Component;
 @ConditionalOnProperty(name = "app.mq.training-camp.enabled", havingValue = "true")
 @RocketMQMessageListener(
         topic = RocketMQConfig.TRAINING_CAMP_ORDER_TIMEOUT_TOPIC,
-        consumerGroup = RocketMQConfig.TRAINING_CAMP_ORDER_TIMEOUT_CONSUMER_GROUP
+        consumerGroup = RocketMQConfig.TRAINING_CAMP_ORDER_TIMEOUT_CONSUMER_GROUP,
+        consumeThreadNumber = 2,
+        consumeThreadMax = 4,
+        maxReconsumeTimes = 5
 )
 public class TrainingCampOrderTimeoutConsumer implements RocketMQListener<Long> {
 

@@ -29,6 +29,8 @@ public class Article {
 
     private Integer likeCount;
 
+    private Integer commentCount;
+
     private LocalDateTime createTime;
 
     private LocalDateTime updateTime;
