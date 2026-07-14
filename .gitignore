@@ -33,7 +33,7 @@ build/
 .vscode/
 
 ### Load test secrets ###
-dev/loadtest/tokens.csv
+dev/loadtest/tokens*.csv
 
 ### Local runtime secrets ###
 application-local.yaml

@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS training_camp (
     title VARCHAR(100) NOT NULL,
     description VARCHAR(1000),
     stock INT NOT NULL,
+    qualification_required TINYINT(1) NOT NULL DEFAULT 0,
     start_time DATETIME NOT NULL,
     end_time DATETIME NOT NULL,
     create_time DATETIME NOT NULL,

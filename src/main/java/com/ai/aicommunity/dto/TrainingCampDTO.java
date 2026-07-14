@@ -23,6 +23,8 @@ public class TrainingCampDTO {
     @Min(value = 1, message = "名额必须大于0")
     private Integer stock;
 
+    private Boolean qualificationRequired;
+
     @NotNull(message = "开始时间不能为空")
     @Future(message = "开始时间必须晚于当前时间")
     private LocalDateTime startTime;

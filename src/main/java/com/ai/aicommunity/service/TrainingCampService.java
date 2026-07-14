@@ -3,6 +3,7 @@ package com.ai.aicommunity.service;
 import com.ai.aicommunity.config.RocketMQConfig;
 import com.ai.aicommunity.dto.TrainingCampDTO;
 import com.ai.aicommunity.dto.TrainingCampOrderMessage;
+import com.ai.aicommunity.dto.TrainingCampQualificationResponse;
 import com.ai.aicommunity.dto.TrainingCampRedisRollbackMessage;
 import com.ai.aicommunity.entity.MqOutboxMessage;
 import com.ai.aicommunity.entity.TrainingCamp;
@@ -27,6 +28,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.UUID;
 
 @Service
 public class TrainingCampService {
@@ -34,6 +36,7 @@ public class TrainingCampService {
     private static final String CAMP_STOCK_KEY = "training:camp:stock:";
     private static final String CAMP_USERS_KEY = "training:camp:users:";
     private static final String CAMP_RATE_LIMIT_KEY = "training:camp:rate:";
+    private static final String CAMP_QUALIFICATION_KEY = "training:camp:qualification:";
     private static final Integer ORDER_STATUS_PENDING = 0;
     private static final Integer ORDER_STATUS_PAID = 1;
     private static final Integer ORDER_STATUS_CANCELED = 2;
@@ -41,13 +44,37 @@ public class TrainingCampService {
     private static final long PAY_TIMEOUT_SECONDS = PAY_TIMEOUT_MINUTES * 60L;
     private static final int ENROLL_RATE_LIMIT_SECONDS = 10;
     private static final int ENROLL_RATE_LIMIT_COUNT = 5;
+    private static final int QUALIFICATION_TOKEN_SECONDS = 60;
+    private static final Duration QUALIFICATION_FORCE_BEFORE_START = Duration.ofMinutes(5);
+    private static final Duration QUALIFICATION_FORCE_AFTER_START = Duration.ofMinutes(30);
     private static final RedisScript<Long> SECKILL_SCRIPT = RedisScript.of(
             "local stock = tonumber(redis.call('get', KEYS[1]) or '-1') " +
-            "if stock < 0 then return 3 end " +
+                    "if stock < 0 then return 3 end " +
                     "if redis.call('sismember', KEYS[2], ARGV[1]) == 1 then return 2 end " +
                     "if stock <= 0 then return 1 end " +
                     "redis.call('decr', KEYS[1]) " +
                     "redis.call('sadd', KEYS[2], ARGV[1]) " +
+                    "return 0",
+            Long.class
+    );
+    private static final RedisScript<Long> SECKILL_WITH_QUALIFICATION_SCRIPT = RedisScript.of(
+            "local owner = redis.call('get', KEYS[3]) " +
+                    "if not owner or owner ~= ARGV[1] then return 4 end " +
+                    "local stock = tonumber(redis.call('get', KEYS[1]) or '-1') " +
+                    "if stock < 0 then return 3 end " +
+                    "if redis.call('sismember', KEYS[2], ARGV[1]) == 1 then return 2 end " +
+                    "if stock <= 0 then return 1 end " +
+                    "redis.call('del', KEYS[3]) " +
+                    "redis.call('decr', KEYS[1]) " +
+                    "redis.call('sadd', KEYS[2], ARGV[1]) " +
+                    "return 0",
+            Long.class
+    );
+    private static final RedisScript<Long> APPLY_QUALIFICATION_SCRIPT = RedisScript.of(
+            "local stock = tonumber(redis.call('get', KEYS[1]) or '-1') " +
+                    "if stock < 0 then return 3 end " +
+                    "if stock <= 0 then return 1 end " +
+                    "redis.call('set', KEYS[2], ARGV[1], 'EX', ARGV[2]) " +
                     "return 0",
             Long.class
     );
@@ -98,6 +125,7 @@ public class TrainingCampService {
         camp.setTitle(dto.getTitle());
         camp.setDescription(dto.getDescription());
         camp.setStock(dto.getStock());
+        camp.setQualificationRequired(Boolean.TRUE.equals(dto.getQualificationRequired()));
         camp.setStartTime(dto.getStartTime());
         camp.setEndTime(dto.getEndTime());
         camp.setCreateTime(LocalDateTime.now());
@@ -122,7 +150,7 @@ public class TrainingCampService {
         resetStockCache(camp);
     }
 
-    public void enroll(Long campId) {
+    public TrainingCampQualificationResponse applyQualification(Long campId) {
         Long userId = UserHolder.getUserId();
         if (userId == null) {
             throw new BusinessException("用户未登录");
@@ -132,23 +160,71 @@ public class TrainingCampService {
         }
 
         TrainingCamp camp = getCamp(campId);
-        LocalDateTime now = LocalDateTime.now();
-        if (now.isBefore(camp.getStartTime())) {
-            throw new BusinessException("报名尚未开始");
+        validateEnrollmentWindow(camp);
+
+        String qualificationToken = UUID.randomUUID().toString();
+        Long result;
+        try {
+            checkEnrollRateLimit(campId, userId);
+            ensureStockPreloaded(camp);
+            result = redisTemplate.execute(
+                    APPLY_QUALIFICATION_SCRIPT,
+                    Arrays.asList(buildStockKey(campId), buildQualificationKey(campId, qualificationToken)),
+                    String.valueOf(userId), String.valueOf(QUALIFICATION_TOKEN_SECONDS)
+            );
+            redisCircuitBreaker.recordSuccess();
+        } catch (DataAccessException e) {
+            redisCircuitBreaker.recordFailure();
+            throw new BusinessException("报名服务暂不可用，请稍后重试");
         }
-        if (now.isAfter(camp.getEndTime())) {
-            throw new BusinessException("报名已结束");
+
+        if (result == null || result == 3) {
+            throw new BusinessException("报名名额未初始化");
+        }
+        if (result == 1) {
+            throw new BusinessException("名额已抢完");
+        }
+
+        return new TrainingCampQualificationResponse(qualificationToken, QUALIFICATION_TOKEN_SECONDS);
+    }
+
+    public void enroll(Long campId, String qualificationToken) {
+        Long userId = UserHolder.getUserId();
+        if (userId == null) {
+            throw new BusinessException("用户未登录");
+        }
+        if (redisCircuitBreaker.isOpen()) {
+            throw new BusinessException("报名服务暂不可用，请稍后重试");
+        }
+
+        TrainingCamp camp = getCamp(campId);
+        validateEnrollmentWindow(camp);
+        boolean qualificationRequired = isQualificationRequired(camp);
+        if (qualificationRequired && (qualificationToken == null || qualificationToken.isBlank())) {
+            throw new BusinessException("请先申请报名资格");
         }
 
         Long result;
         try {
             checkEnrollRateLimit(campId, userId);
             ensureStockPreloaded(camp);
-            result = redisTemplate.execute(
-                    SECKILL_SCRIPT,
-                    Arrays.asList(buildStockKey(campId), buildUsersKey(campId)),
-                    String.valueOf(userId)
-            );
+            if (qualificationRequired) {
+                result = redisTemplate.execute(
+                        SECKILL_WITH_QUALIFICATION_SCRIPT,
+                        Arrays.asList(
+                                buildStockKey(campId),
+                                buildUsersKey(campId),
+                                buildQualificationKey(campId, qualificationToken)
+                        ),
+                        String.valueOf(userId)
+                );
+            } else {
+                result = redisTemplate.execute(
+                        SECKILL_SCRIPT,
+                        Arrays.asList(buildStockKey(campId), buildUsersKey(campId)),
+                        String.valueOf(userId)
+                );
+            }
             redisCircuitBreaker.recordSuccess();
         } catch (DataAccessException e) {
             redisCircuitBreaker.recordFailure();
@@ -164,10 +240,13 @@ public class TrainingCampService {
         if (result == 2) {
             throw new BusinessException("不能重复报名");
         }
+        if (result == 4) {
+            throw new BusinessException("报名资格无效或已过期");
+        }
 
         TrainingCampOrderMessage message = new TrainingCampOrderMessage(campId, userId);
         try {
-            mqOutboxService.saveAndSend(
+            mqOutboxService.saveAndSendAsync(
                     RocketMQConfig.TRAINING_CAMP_ORDER_TOPIC,
                     message,
                     objectMapper.writeValueAsString(message)
@@ -305,6 +384,26 @@ public class TrainingCampService {
         return order;
     }
 
+    private void validateEnrollmentWindow(TrainingCamp camp) {
+        LocalDateTime now = LocalDateTime.now();
+        if (now.isBefore(camp.getStartTime())) {
+            throw new BusinessException("报名尚未开始");
+        }
+        if (now.isAfter(camp.getEndTime())) {
+            throw new BusinessException("报名已结束");
+        }
+    }
+
+    private boolean isQualificationRequired(TrainingCamp camp) {
+        if (Boolean.TRUE.equals(camp.getQualificationRequired())) {
+            return true;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime forceStart = camp.getStartTime().minus(QUALIFICATION_FORCE_BEFORE_START);
+        LocalDateTime forceEnd = camp.getStartTime().plus(QUALIFICATION_FORCE_AFTER_START);
+        return !now.isBefore(forceStart) && now.isBefore(forceEnd);
+    }
+
     private void resetStockCache(TrainingCamp camp) {
         cacheStock(camp);
         redisTemplate.delete(buildUsersKey(camp.getId()));
@@ -420,6 +519,10 @@ public class TrainingCampService {
 
     private String buildUsersKey(Long campId) {
         return CAMP_USERS_KEY + campId;
+    }
+
+    private String buildQualificationKey(Long campId, String qualificationToken) {
+        return CAMP_QUALIFICATION_KEY + campId + ":" + qualificationToken;
     }
 
     private void checkEnrollRateLimit(Long campId, Long userId) {

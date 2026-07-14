@@ -2,6 +2,7 @@ package com.ai.aicommunity.controller;
 
 import com.ai.aicommunity.common.Result;
 import com.ai.aicommunity.dto.TrainingCampDTO;
+import com.ai.aicommunity.dto.TrainingCampQualificationResponse;
 import com.ai.aicommunity.entity.TrainingCamp;
 import com.ai.aicommunity.entity.TrainingCampOrder;
 import com.ai.aicommunity.service.TrainingCampService;
@@ -43,10 +44,16 @@ public class TrainingCampController {
         return Result.success("预热成功");
     }
 
+    @PostMapping("/{campId}/qualification")
+    public Result<TrainingCampQualificationResponse> applyQualification(@PathVariable Long campId) {
+        return Result.success(trainingCampService.applyQualification(campId));
+    }
+
     @PostMapping("/{campId}/enroll")
-    public Result<String> enroll(@PathVariable Long campId) {
-        trainingCampService.enroll(campId);
-        return Result.success("抢报名成功，请在15分钟内支付");
+    public Result<String> enroll(@PathVariable Long campId,
+                                 @RequestParam(required = false) String qualificationToken) {
+        trainingCampService.enroll(campId, qualificationToken);
+        return Result.success("报名资格已锁定，订单创建中");
     }
 
     @GetMapping("/orders/me")

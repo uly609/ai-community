@@ -6,22 +6,22 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("training_camp")
-public class TrainingCamp {
+@TableName("mq_outbox_message")
+public class MqOutboxMessage {
 
     private Long id;
 
-    private String title;
+    private String topic;
 
-    private String description;
+    private String payload;
 
-    private Integer stock;
+    private Integer status;
 
-    private Boolean qualificationRequired;
+    private Integer retryCount;
 
-    private LocalDateTime startTime;
+    private LocalDateTime nextRetryTime;
 
-    private LocalDateTime endTime;
+    private String errorMessage;
 
     private LocalDateTime createTime;
 
