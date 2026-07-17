@@ -4,9 +4,9 @@ spring:
   application:
     name: ai-community
   datasource:
-    url: jdbc:mysql://localhost:3306/ai_community
-    username: root
-    password: Whm1314157
+    url: ${DB_URL:jdbc:mysql://localhost:3306/ai_community}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
     driver-class-name: com.mysql.cj.jdbc.Driver
 rocketmq:
   name-server: localhost:9876
@@ -25,3 +25,14 @@ app:
     base-url: ${AI_BASE_URL:https://api.openai.com/v1}
     api-key: ${AI_API_KEY:}
     model: ${AI_MODEL:gpt-4o-mini}
+  canal:
+    article-cache:
+      enabled: false
+      host: localhost
+      port: 11111
+      destination: example
+      username:
+      password:
+      subscribe-regex: ai_community\\.article
+      batch-size: 100
+      idle-sleep-millis: 1000

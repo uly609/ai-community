@@ -13,7 +13,6 @@ import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
-import org.apache.rocketmq.spring.core.RocketMQTemplate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -25,6 +24,7 @@ import org.springframework.data.redis.core.script.RedisScript;
 import java.time.LocalDateTime;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -42,8 +42,6 @@ class TrainingCampServiceTest {
     @Mock
     private StringRedisTemplate redisTemplate;
     @Mock
-    private RocketMQTemplate rocketMQTemplate;
-    @Mock
     private MqOutboxService mqOutboxService;
     @Mock
     private ObjectMapper objectMapper;
@@ -60,7 +58,6 @@ class TrainingCampServiceTest {
                 trainingCampMapper,
                 orderMapper,
                 redisTemplate,
-                rocketMQTemplate,
                 mqOutboxService,
                 objectMapper,
                 redisCircuitBreaker
@@ -77,7 +74,7 @@ class TrainingCampServiceTest {
 
         verify(trainingCampMapper, never()).update(any(), any());
         verify(orderMapper, never()).insert(any(TrainingCampOrder.class));
-        verify(rocketMQTemplate, never()).syncSendDelayTimeSeconds(any(), any(), anyLong());
+        verify(mqOutboxService, never()).savePendingDelay(any(), any(), anyInt());
     }
 
     @Test

@@ -39,16 +39,13 @@ public class MqOutboxService {
         this.objectMapper = objectMapper;
     }
 
+    // 保存 Outbox 后立刻同步发 MQ，适合不在乎请求线程多等一下的场景。
     public void saveAndSend(String topic, Object payload, String payloadJson) {
         MqOutboxMessage message = savePending(topic, payloadJson);
         sendNow(message, payload);
     }
 
-    /**
-     * Persists the message first, then lets the RocketMQ client wait for the broker
-     * acknowledgement off the HTTP request thread. The scheduled retry remains the
-     * durable fallback when this first delivery does not succeed.
-     */
+    // 保存 Outbox 后异步发 MQ：接口不用等 Broker 确认，失败再靠定时任务补发。
     public void saveAndSendAsync(String topic, Object payload, String payloadJson) {
         MqOutboxMessage message = savePending(topic, payloadJson);
         try {
@@ -68,26 +65,41 @@ public class MqOutboxService {
         }
     }
 
+    // 只保存一条待发送消息，不马上发。事务里常用这个，等提交后再发。
     public MqOutboxMessage savePending(String topic, String payloadJson) {
+        return savePending(topic, payloadJson, null);
+    }
+
+    // 保存一条 RocketMQ 延迟消息。delaySeconds 交给 Broker 控制到点投递。
+    public MqOutboxMessage savePendingDelay(String topic, String payloadJson, int delaySeconds) {
+        return savePending(topic, payloadJson, delaySeconds);
+    }
+
+    private MqOutboxMessage savePending(String topic, String payloadJson, Integer delaySeconds) {
         LocalDateTime now = LocalDateTime.now();
         MqOutboxMessage message = new MqOutboxMessage();
         message.setTopic(topic);
         message.setPayload(payloadJson);
         message.setStatus(STATUS_PENDING);
         message.setRetryCount(0);
+        message.setDelaySeconds(delaySeconds);
         message.setNextRetryTime(now);
         message.setCreateTime(now);
         message.setUpdateTime(now);
+        // 先把“我要发的消息”落库，后面 MQ 发送失败才有东西可以补偿重试。
         outboxMapper.insert(message);
         return message;
     }
 
+    // 立即发送一条已经保存过的 Outbox 消息。
     public void sendNow(MqOutboxMessage message, Object payload) {
         sendMessage(message, payload);
     }
 
     @Scheduled(fixedDelay = 5000)
+    // 定时补发 Pending/Failed 消息，避免 MQ 临时失败导致消息永远丢在表里。
     public void retryPendingMessages() {
+        // 扫描还没发送成功的 Outbox 消息，RocketMQ 临时失败时靠这里补发。
         List<MqOutboxMessage> messages = outboxMapper.selectList(
                 new LambdaQueryWrapper<MqOutboxMessage>()
                         .in(MqOutboxMessage::getStatus, STATUS_PENDING, STATUS_FAILED)
@@ -106,6 +118,7 @@ public class MqOutboxService {
         }
     }
 
+    // 根据 topic 把 JSON payload 还原成对应消息对象。
     private Object parsePayload(MqOutboxMessage message) {
         try {
             if (RocketMQConfig.TRAINING_CAMP_ORDER_TOPIC.equals(message.getTopic())) {
@@ -113,6 +126,9 @@ public class MqOutboxService {
             }
             if (RocketMQConfig.TRAINING_CAMP_REDIS_ROLLBACK_TOPIC.equals(message.getTopic())) {
                 return objectMapper.readValue(message.getPayload(), TrainingCampRedisRollbackMessage.class);
+            }
+            if (RocketMQConfig.TRAINING_CAMP_ORDER_TIMEOUT_TOPIC.equals(message.getTopic())) {
+                return Long.valueOf(message.getPayload());
             }
             if (RocketMQConfig.COMMUNITY_NOTIFICATION_TOPIC.equals(message.getTopic())) {
                 return objectMapper.readValue(message.getPayload(), CommunityNotificationMessage.class);
@@ -126,15 +142,21 @@ public class MqOutboxService {
         }
     }
 
+    // 真正发 RocketMQ，成功标 SENT，失败标 FAILED 并安排下次重试。
     private void sendMessage(MqOutboxMessage message, Object payload) {
         try {
-            rocketMQTemplate.syncSend(message.getTopic(), payload);
+            if (message.getDelaySeconds() != null && message.getDelaySeconds() > 0) {
+                rocketMQTemplate.syncSendDelayTimeSeconds(message.getTopic(), payload, message.getDelaySeconds());
+            } else {
+                rocketMQTemplate.syncSend(message.getTopic(), payload);
+            }
             markSent(message.getId());
         } catch (Exception e) {
             markFailed(message, e);
         }
     }
 
+    // 标记消息已经发成功。
     private void markSent(Long id) {
         outboxMapper.update(
                 null,
@@ -146,6 +168,7 @@ public class MqOutboxService {
         );
     }
 
+    // 标记消息发送失败，并设置下一次重试时间。
     private void markFailed(MqOutboxMessage message, Throwable e) {
         int retryCount = message.getRetryCount() == null ? 0 : message.getRetryCount();
         LocalDateTime nextRetryTime = LocalDateTime.now().plusSeconds(Math.min(60, 5L * (retryCount + 1)));
@@ -162,6 +185,7 @@ public class MqOutboxService {
         );
     }
 
+    // 错误信息太长会塞不进数据库，这里截断一下。
     private String truncate(String message) {
         if (message == null) {
             return null;

@@ -15,6 +15,7 @@
         <java.version>21</java.version>
         <lombok.version>1.18.38</lombok.version>
         <guava.version>33.3.1-jre</guava.version>
+        <canal.version>1.1.7</canal.version>
     </properties>
     <dependencies>
         <dependency>
@@ -50,6 +51,16 @@
             <groupId>com.google.guava</groupId>
             <artifactId>guava</artifactId>
             <version>${guava.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba.otter</groupId>
+            <artifactId>canal.client</artifactId>
+            <version>${canal.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba.otter</groupId>
+            <artifactId>canal.protocol</artifactId>
+            <version>${canal.version}</version>
         </dependency>
         <dependency>
             <groupId>com.mysql</groupId>

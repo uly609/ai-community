@@ -42,7 +42,23 @@
 - 布隆过滤器和空值缓存处理缓存穿透。
 - 逻辑过期加 Redis 锁解决热点缓存击穿：一个请求异步重建，其余请求先返回旧文章。
 - Caffeine 降低 Redis 的高并发访问压力；Redis 降低 MySQL 压力。
-- 文章缓存接受短暂最终一致性；多实例下其他机器的本地缓存可能到 TTL 后才更新。
+- 文章缓存接受短暂最终一致性；当前项目用 `article:version:{id}` 做版本校验，
+  用 `cache_invalidation_task` 做缓存删除失败后的补偿重试。
+
+如果面试官追问“文章缓存一致性生产上怎么做”，可以补充 Canal/binlog 方案：
+
+- 文章这种读多写少业务，核心是 MySQL 变更后让 Redis/Caffeine 失效。
+- 常规 Cache Aside 是业务代码里 `更新 MySQL -> 删除缓存`；如果删除失败，
+  要记录补偿任务定时重试。
+- 当前项目已经预留 `ArticleCanalCacheInvalidationConsumer`，默认关闭；启动 Canal Server
+  后把 `app.canal.article-cache.enabled=true` 打开即可监听 `article` 表。
+- Canal 监听 MySQL binlog 的意义是：只要 MySQL 事务提交，binlog 就会记录这次
+  `update/delete`，Canal 能根据 binlog 统一生成缓存失效事件。
+- Canal 不是保证 Redis 一定删除成功。它解决的是“数据库变更事件可靠捕获”；
+  Redis 删除失败仍然要靠 MQ 重试、补偿任务、死信或告警兜底。
+- 面试话术：文章缓存可以用 Canal 监听 binlog 做统一缓存失效；训练营报名不用
+  Canal 做主链路，因为报名需要在请求进入 MySQL 前削峰，所以更适合
+  Redis Lua + Outbox + RocketMQ。
 
 ## 4. 点赞、收藏、评论与通知
 

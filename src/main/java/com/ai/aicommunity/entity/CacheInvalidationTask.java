@@ -6,20 +6,18 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("mq_outbox_message")
-public class MqOutboxMessage {
+@TableName("cache_invalidation_task")
+public class CacheInvalidationTask {
 
     private Long id;
 
-    private String topic;
+    private String cacheType;
 
-    private String payload;
+    private Long bizId;
 
     private Integer status;
 
     private Integer retryCount;
-
-    private Integer delaySeconds;
 
     private LocalDateTime nextRetryTime;
 

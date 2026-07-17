@@ -20,7 +20,6 @@ import java.util.Map;
 public class ArticleAiSummaryService {
 
     private static final int MAX_SUMMARY_LENGTH = 1000;
-
     private final AiProperties aiProperties;
     private final RestClient.Builder restClientBuilder;
     private final ObjectMapper objectMapper;
