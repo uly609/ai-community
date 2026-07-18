@@ -13,6 +13,8 @@ public class LearningAssistantResponse {
 
     private Boolean aiEnabled;
 
+    private Long conversationId;
+
     private List<Reference> references;
 
     @Data
